@@ -13,40 +13,40 @@ This is a short demo. For a full description of the various models you can train
 ### Prerequisites
 
 * [Python 3](https://www.python.org/downloads/)
-* [Scipy](https://www.scipy.org)
-* [Camel Tools](https://camel-tools.readthedocs.io/en/latest/)
+* [scipy](https://www.scipy.org)
+* [camel_tools](https://camel-tools.readthedocs.io/en/latest/)
 
 ### Demo
 
 Run the tokenizer on the sample data in interactive mode.
 
-'''python greedy_disambiguator.py -t sample.in -T sample.in -o sample.out -f joint -i False -I True'''
+```python greedy_disambiguator.py -t sample.in -T sample.in -o sample.out -f joint -i False -I True```
 
 ## Disambiguation Models
 
 We have implemented 12 methods of determining the optimal tokenization for a word form given some raw, unsupervised training data.
 
-* 1) **Ignore classes, Simple clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. We consider each clitic to be a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. '''... -f simple -i True'''
-* 2) **Consider classes, Simple clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. We consider each clitic to be a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. '''... -f simple -i False'''
-* 3) **Ignore classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. If there are multiple proclitics, we consider the combination to be a single token, and the same goes for enclitics. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. '''... -f complex -i True'''
-* 4) **Consider classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. If there are multiple proclitics, we consider the combination to be a single token, and the same goes for enclitics. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. '''... -f complex -i False'''
-* 5) **Ignore classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. We consider the combination of all clitics (regardless of position before or after the base) to constitute a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. '''... -f joint -i True'''
-* 6) **Consider classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. We consider the combination of all clitics (regardless of position before or after the base) to constitute a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. '''... -f joint -i False'''
-* 7-12) **Token maximization** This is a simple baseline version of each of the first 6 models in whereby we simply choose the potential tokenization that maximizes the number of tokens. The corresponding model in 1-6 is then used only as a tie-breaker. '''... -b most_tokens'''
+* 1) **Ignore classes, Simple clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. We consider each clitic to be a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f simple -i True```
+* 2) **Consider classes, Simple clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. We consider each clitic to be a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f simple -i False```
+* 3) **Ignore classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. If there are multiple proclitics, we consider the combination to be a single token, and the same goes for enclitics. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f complex -i True```
+* 4) **Consider classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. If there are multiple proclitics, we consider the combination to be a single token, and the same goes for enclitics. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f complex -i False```
+* 5) **Ignore classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. We consider the combination of all clitics (regardless of position before or after the base) to constitute a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f joint -i True```
+* 6) **Consider classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. We consider the combination of all clitics (regardless of position before or after the base) to constitute a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f joint -i False```
+* 7-12) **Token maximization** This is a simple baseline version of each of the first 6 models in whereby we simply choose the potential tokenization that maximizes the number of tokens. The corresponding model in 1-6 is then used only as a tie-breaker. ```... -b most_tokens```
 
 ## Usage Options
 
 In addition to specifying the relevant disambiguation models as discussed above, you can also specify the following options at the command line:
 
-* '''-t''' Training file. This is raw data to be run through the analyzer to gather frequency statistics and train the disambiguator.
-* '''-T''' Test file. This is the data which the trained disambiguator will tokenize.
-* '''-o''' Output file. This is where the tokenized output will be written.
-* '''-d''' Database. This is the location of the database upon which the analyzer relies. This repository includes a built-in database which will be used by default.
-* '''-c''' Cached disambiguator model. Once you train a tokenization model, you can cache it to be quickly loaded for future use. This option specifies the location where it will be cached or where a previously cached model will be looked for.
-* '''-s''' Separator. This is the charactor appended to the end of prefixal elements or beginning of suffixal elements to signal how they attach to the base. The separator is '+' by default.
-* '''-p''' Print options. '''most_frequent_tokens''' will print the most frequent tokens for each class to standard output. '''ranked_tokenizations_by_word''' will print the ranking over possible tokenizations for every single word in the test file.
-* '''-D''' Debug mode. If True, this will print statistics for every token in every possible analyses during test time (this works in interactive mode as well).
-* '''-I''' Interactive mode. If True, upon completing training, this allows the user to query the trained tokenizer from the command line.
+* ```-t``` Training file. This is raw data to be run through the analyzer to gather frequency statistics and train the disambiguator.
+* ```-T``` Test file. This is the data which the trained disambiguator will tokenize.
+* ```-o``` Output file. This is where the tokenized output will be written.
+* ```-d``` Database. This is the location of the database upon which the analyzer relies. This repository includes a built-in database which will be used by default.
+* ```-c``` Cached disambiguator model. Once you train a tokenization model, you can cache it to be quickly loaded for future use. This option specifies the location where it will be cached or where a previously cached model will be looked for.
+* ```-s``` Separator. This is the charactor appended to the end of prefixal elements or beginning of suffixal elements to signal how they attach to the base. The separator is '+' by default.
+* ```-p``` Print options. ```most_frequent_tokens``` will print the most frequent tokens for each class to standard output. ```ranked_tokenizations_by_word``` will print the ranking over possible tokenizations for every single word in the test file.
+* ```-D``` Debug mode. If True, this will print statistics for every token in every possible analyses during test time (this works in interactive mode as well).
+* ```-I``` Interactive mode. If True, upon completing training, this allows the user to query the trained tokenizer from the command line.
 
 ## Acknowledgments
 
