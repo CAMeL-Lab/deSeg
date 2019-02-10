@@ -13,8 +13,8 @@ This is a short demo. For a full description of the various models you can train
 ### Prerequisites
 
 * [Python 3](https://www.python.org/downloads/)
-* [scipy](https://www.scipy.org)
-* [camel_tools](https://camel-tools.readthedocs.io/en/latest/)
+* [Scipy](https://www.scipy.org)
+* [Camel Tools](https://camel-tools.readthedocs.io/en/latest/)
 
 ### Demo
 
