@@ -7,7 +7,7 @@ from camel_tools.utils.dediac import dediac_ar
 
 NORM_ALIF_RE = re.compile(r'[آأإٱ]')
 NORM_YAA_RE = re.compile(r'ى')
-NORM_SPECIAL_RE = re.compile(r'[/+ـ]')
+NORM_SPECIAL_RE = re.compile(r'[/+_]')
 
 
 class Analyzer:
@@ -98,9 +98,9 @@ class Analyzer:
                     tokens.append('{}'.format(token))
                 else:
                     if pro:
-                        tokens.append('{}+ـ'.format(token))
+                        tokens.append('{}+_'.format(token))
                     else:
-                        tokens.append('ـ+{}'.format(token))
+                        tokens.append('_+{}'.format(token))
                 
         return ''.join(tokens)
 
@@ -142,7 +142,7 @@ class Analyzer:
                     completed_analyses[analysis] = True
                     
                     ### Separate tokens
-                    analysis = analysis.split('ـ')
+                    analysis = analysis.split('_')
                     ### Handle words entirely consisting of diacritics
                     if len(analysis) == 0:
                         possible_tokenization[1] = word
@@ -168,14 +168,10 @@ class Analyzer:
                             possible_tokenization[1] = word
 
                     ### Exception handling for database errors
-                        # that wierd taa proclitic thing
                         # 3lY as a proclitic
                         # it shouldn't be possible to have an empty base
                     good_analysis = True
-                    ## taa
-                    if 'ت+' in possible_tokenization[0]:
-                        good_analysis = False
-                    elif possible_tokenization[1] == None or len(possible_tokenization[1]) == 0:
+                    if possible_tokenization[1] == None or len(possible_tokenization[1]) == 0:
                         ## 3lY should not be a proclitic.. database bug
                         if ['+علي'] == possible_tokenization[0][0]:
                             good_analysis = False
