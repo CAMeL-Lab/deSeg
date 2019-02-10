@@ -42,14 +42,15 @@ class Analyzer:
             ### Order of tags used to predict which belongs to base when multiple tags occur
                 ## I did this in 5 minutes as proof of concept.. the order could be improved
                 ## If you really want good results on MSA, you should just buy the Sama database
-            self.open_classes_hierarchy = ['NOUN', 'ADJ', 'VERB', 'IV', 'PV', 'CV', 'ADV', 'NOUN_PROP',
-            'IV_PASS', 'PV_PASS', 'VERB_PART', 'FOREIGN', 'PSEUDO_VERB', 'FOCUS_PART', 'REL_ADV', 'ABBREV',  'PART', 'INTERROG_PRON', 'REL_PRON', 'NOUN_QUANT', 'PRON_3MS',
-            'PRON_3MP', 'PRON_3D', 'PRON_2D' 'PRON_2MS', 'PRON_2FS', 'PRON_1S', 'PRON_2MS',
-            'PRON_2MP', 'PRON_3FS', 'PRON_3FP', 'PRON_2D', 'PRON_1P',  'DEM_PRON_MP',
-            'DEM_PRON_MS', 'DEM_PRON', 'DEM_PRON_F', 'DEM_PRON_FD', 'DEM_PRON_MD',
-            'DEM_PRON_FS', 'FUT_PART', 'NEG_PART', 'VOC_PART', 'NOUN_NUM', 'PREP', 'SUB_CONJ',
-            'CONJ', 'INTERJ', 'INTERROG_ADV', 'INTERROG_PART', 'EXCLAM_PRON', 'NUMERIC_COMMA',
-            'PUNC', 'DET']
+            self.open_classes_hierarchy = [
+                'NOUN', 'ADJ', 'VERB', 'IV', 'PV', 'CV', 'ADV', 'NOUN_PROP', 'IV_PASS', 'PV_PASS',
+                'VERB_PART', 'FOREIGN', 'PSEUDO_VERB', 'FOCUS_PART', 'REL_ADV', 'ABBREV',  'PART',
+                'INTERROG_PRON', 'REL_PRON', 'NOUN_QUANT', 'PRON_3MS', 'PRON_3MP', 'PRON_3D',
+                'PRON_2D' 'PRON_2MS', 'PRON_2FS', 'PRON_1S', 'PRON_2MS', 'PRON_2MP', 'PRON_3FS',
+                'PRON_3FP', 'PRON_2D', 'PRON_1P',  'DEM_PRON_MP', 'DEM_PRON_MS', 'DEM_PRON',
+                'DEM_PRON_F', 'DEM_PRON_FD', 'DEM_PRON_MD', 'DEM_PRON_FS', 'FUT_PART', 'NEG_PART',
+                'VOC_PART', 'NOUN_NUM', 'PREP', 'SUB_CONJ', 'CONJ', 'INTERJ', 'INTERROG_ADV',
+                'INTERROG_PART', 'EXCLAM_PRON', 'NUMERIC_COMMA', 'PUNC', 'DET']
         else:
             try:
                 self.database = CalimaStarDB(database, 'a')
