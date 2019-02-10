@@ -35,12 +35,21 @@ class Analyzer:
 
         self.separator = separator
         self.database_file = database
+        ### The free database does not distinguish base from affixal tokens in D3tok
+            ## If you use the free database, here's a cheap hack to predict the base token
         if self.database_file == 'built-in':
             self.database = CalimaStarDB.builtin_db('almor-msa', 'a')
-            ### Open classes are ranked so that if they co-occur,
-                ## the one more likely to represent the base should appear first
-                ## I did this in 5 minutes as proof of concept.. the order could be improved.
-            self.open_classes = ['NOUN', 'ADJ', 'VERB', 'IV', 'PV', 'CV', 'ADV', 'NOUN_PROP', 'IV_PASS', 'PV_PASS', 'VERB_PART', 'FOREIGN', 'PSEUDO_VERB', 'FOCUS_PART', 'REL_ADV', 'ABBREV',  'PART', 'INTERROG_PRON', 'REL_PRON', 'NOUN_QUANT', 'PRON_3MS', 'PRON_3MP', 'PRON_3D', 'PRON_2D' 'PRON_2MS', 'PRON_2FS', 'PRON_1S', 'PRON_2MS', 'PRON_2MP', 'PRON_3FS', 'PRON_3FP', 'PRON_2D', 'PRON_1P',  'DEM_PRON_MP', 'DEM_PRON_MS', 'DEM_PRON', 'DEM_PRON_F', 'DEM_PRON_FD', 'DEM_PRON_MD', 'DEM_PRON_FS', 'FUT_PART', 'NEG_PART', 'VOC_PART', 'NOUN_NUM', 'PREP', 'SUB_CONJ', 'CONJ', 'INTERJ', 'INTERROG_ADV', 'INTERROG_PART', 'EXCLAM_PRON', 'NUMERIC_COMMA', 'PUNC', 'DET']
+            ### Order of tags used to predict which belongs to base when multiple tags occur
+                ## I did this in 5 minutes as proof of concept.. the order could be improved
+                ## If you really want good results on MSA, you should just buy the Sama database
+            self.open_classes_hierarchy = ['NOUN', 'ADJ', 'VERB', 'IV', 'PV', 'CV', 'ADV', 'NOUN_PROP',
+            'IV_PASS', 'PV_PASS', 'VERB_PART', 'FOREIGN', 'PSEUDO_VERB', 'FOCUS_PART', 'REL_ADV', 'ABBREV',  'PART', 'INTERROG_PRON', 'REL_PRON', 'NOUN_QUANT', 'PRON_3MS',
+            'PRON_3MP', 'PRON_3D', 'PRON_2D' 'PRON_2MS', 'PRON_2FS', 'PRON_1S', 'PRON_2MS',
+            'PRON_2MP', 'PRON_3FS', 'PRON_3FP', 'PRON_2D', 'PRON_1P',  'DEM_PRON_MP',
+            'DEM_PRON_MS', 'DEM_PRON', 'DEM_PRON_F', 'DEM_PRON_FD', 'DEM_PRON_MD',
+            'DEM_PRON_FS', 'FUT_PART', 'NEG_PART', 'VOC_PART', 'NOUN_NUM', 'PREP', 'SUB_CONJ',
+            'CONJ', 'INTERJ', 'INTERROG_ADV', 'INTERROG_PART', 'EXCLAM_PRON', 'NUMERIC_COMMA',
+            'PUNC', 'DET']
         else:
             try:
                 self.database = CalimaStarDB(database, 'a')
@@ -56,7 +65,7 @@ class Analyzer:
         analysis = analysis['bw'].replace('+','/').strip('/').split('/')
 
         open_class_tag = None
-        for open_class in self.open_classes:
+        for open_class in self.open_classes_hierarchy:
             if open_class in analysis:
                 open_class_tag = open_class
                 break
@@ -67,7 +76,7 @@ class Analyzer:
             stderr.write('Could not find a base token!\n')
             stderr.write('{}\n'.format(word))
             stderr.write('{}\n'.format(str(analysis)))
-            stderr.write('{}\n'.format(str(self.open_classes)))
+            stderr.write('{}\n'.format(str(self.open_classes_hierarchy)))
             exit()
 
         try:
