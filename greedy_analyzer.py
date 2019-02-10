@@ -7,6 +7,7 @@ from camel_tools.utils.dediac import dediac_ar
 
 NORM_ALIF_RE = re.compile(r'[آأإٱ]')
 NORM_YAA_RE = re.compile(r'ى')
+NORM_SPECIAL_RE = re.compile(r'[/+ـ]')
 
 
 class Analyzer:
@@ -39,7 +40,7 @@ class Analyzer:
             ### Open classes are ranked so that if they co-occur,
                 ## the one more likely to represent the base should appear first
                 ## I did this in 5 minutes as proof of concept.. the order could be improved.
-            self.open_classes = ['NOUN', 'ADJ', 'VERB', 'IV', 'PV', 'CV', 'ADV', 'NOUN_PROP', 'IV_PASS', 'PV_PASS', 'VERB_PART', 'FOREIGN', 'PSEUDO_VERB', 'FOCUS_PART', 'REL_ADV', 'ABBREV',  'PART', 'INTERROG_PRON', 'REL_PRON', 'NOUN_QUANT', 'PRON_3MS', 'PRON_3MP', 'PRON_3D', 'PRON_2D' 'PRON_2MS', 'PRON_2FS', 'PRON_1S', 'PRON_2MS', 'PRON_2MP', 'PRON_3FS', 'PRON_3FP', 'PRON_1P',  'DEM_PRON_MP', 'DEM_PRON_MS', 'DEM_PRON', 'DEM_PRON_F', 'DEM_PRON_FS', 'FUT_PART', 'NEG_PART', 'VOC_PART', 'NOUN_NUM', 'PREP', 'SUB_CONJ', 'CONJ', 'INTERJ', 'INTERROG_ADV', 'INTERROG_PART', 'EXCLAM_PRON', 'NUMERIC_COMMA', 'PUNC', 'DET']
+            self.open_classes = ['NOUN', 'ADJ', 'VERB', 'IV', 'PV', 'CV', 'ADV', 'NOUN_PROP', 'IV_PASS', 'PV_PASS', 'VERB_PART', 'FOREIGN', 'PSEUDO_VERB', 'FOCUS_PART', 'REL_ADV', 'ABBREV',  'PART', 'INTERROG_PRON', 'REL_PRON', 'NOUN_QUANT', 'PRON_3MS', 'PRON_3MP', 'PRON_3D', 'PRON_2D' 'PRON_2MS', 'PRON_2FS', 'PRON_1S', 'PRON_2MS', 'PRON_2MP', 'PRON_3FS', 'PRON_3FP', 'PRON_2D', 'PRON_1P',  'DEM_PRON_MP', 'DEM_PRON_MS', 'DEM_PRON', 'DEM_PRON_F', 'DEM_PRON_FD', 'DEM_PRON_MD', 'DEM_PRON_FS', 'FUT_PART', 'NEG_PART', 'VOC_PART', 'NOUN_NUM', 'PREP', 'SUB_CONJ', 'CONJ', 'INTERJ', 'INTERROG_ADV', 'INTERROG_PART', 'EXCLAM_PRON', 'NUMERIC_COMMA', 'PUNC', 'DET']
         else:
             try:
                 self.database = CalimaStarDB(database, 'a')
@@ -63,17 +64,18 @@ class Analyzer:
         try:
             assert open_class_tag != None
         except:
-            print('Could not find a base token!')
-            print(word)
-            print(analysis)
+            stderr.write('Could not find a base token!\n')
+            stderr.write('{}\n'.format(word))
+            stderr.write('{}\n'.format(str(analysis)))
+            stderr.write('{}\n'.format(str(self.open_classes)))
             exit()
 
         try:
             assert len(analysis) % 2 == 0
         except:
-            print('Malformed analysis!')
-            print(word)
-            print(analysis)
+            stderr.write('Malformed analysis!\n')
+            stderr.write('{}\n'.format(word))
+            stderr.write('{}\n'.format(str(analysis)))
             exit()
 
         tokens = []
@@ -83,14 +85,14 @@ class Analyzer:
             if len(token) > 0:
                 if pro and analysis[m+1] == open_class_tag:
                     pro = False
-                    tokens.append('ـ{}ـ'.format(token))
+                    tokens.append('{}'.format(token))
                 else:
                     if pro:
-                        tokens.append('{}+'.format(token))
+                        tokens.append('{}+ـ'.format(token))
                     else:
-                        tokens.append('+{}'.format(token))
+                        tokens.append('ـ+{}'.format(token))
                 
-        return ''.join(tokens).strip('ـ')
+        return ''.join(tokens)
 
 
     def get_possible_tokenizations(self, word):
@@ -108,9 +110,11 @@ class Analyzer:
 
                 possible_tokenization = [[], None, []]
 
+                ### Parse Almor database analysis
                 if self.database_file == 'built-in':
                     analysis = self.accomodate_built_in_database(word, analysis)
 
+                ### Parse Sama database analysis
                 else:
                     analysis = analysis['d3tok']
                 
@@ -129,12 +133,12 @@ class Analyzer:
                     
                     ### Separate tokens
                     analysis = analysis.split('ـ')
-                    ### Handle words entirely consisting of special characters
+                    ### Handle words entirely consisting of diacritics
                     if len(analysis) == 0:
                         possible_tokenization[1] = word
                     ### For non-empty words
                     else:
-                        ### More special character handling
+                        ### Only consider tokens consisting of more than just diacritics
                         all_tokens_empty = True
                         for token in analysis:
                             if len(token.strip(self.separator)) != 0:
@@ -149,8 +153,7 @@ class Analyzer:
                                 ### handle base
                                 else:
                                     possible_tokenization[1] = token
-
-                        ### More special character handling
+                        ### Finish andling words entirely consisting of diacritics
                         if all_tokens_empty:
                             possible_tokenization[1] = word
 
@@ -176,12 +179,13 @@ class Analyzer:
                             possible_tokenizations.append(possible_tokenization)
 
 
-        ### If we encounter an inconsistency in the database, the word will be the base
+        ### If inconsistency in the database, word will be the base with no clitics
         except KeyError:
             possible_tokenization = [[], word, []]
             possible_tokenizations.append(possible_tokenization)
+            stderr.write('\nDatabase key error for {}\nUsing default tokenization analysis {}\n'.format(word, str(possible_tokenizations)))
 
-        ### If no reasonable analyses are produced, default base is the word with no clitics
+        ### And if no reasonable analyses are produced, default base is the word with no clitics
         if len(possible_tokenizations) == 0:
             possible_tokenizations = [[[], word, []]]
 
@@ -189,12 +193,20 @@ class Analyzer:
 
 
 def dediacritize_normalize(word):
+
     ### Dediacritize
     word = dediac_ar(word)
     ### Alif normalize
     word = NORM_ALIF_RE.sub('ا', word)
     ### Yaa normalize
     word = NORM_YAA_RE.sub('ي', word)
+
+    return word
+
+def replace_special_characters(word):
+
+    ### Normalize special characters
+    word = NORM_SPECIAL_RE.sub('-', word)
 
     return word
 

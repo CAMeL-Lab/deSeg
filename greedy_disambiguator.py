@@ -1,6 +1,6 @@
 from sys import argv, stderr, stdout
 import os
-from greedy_analyzer import Analyzer, dediacritize_normalize
+from greedy_analyzer import Analyzer, dediacritize_normalize, replace_special_characters
 from abc import ABC, abstractmethod
 from scipy.stats import gmean
 import pickle
@@ -54,6 +54,7 @@ class Disambiguator_super(ABC):
         for sentence in open(input_file):
             for word in sentence.split():
                 word = dediacritize_normalize(word)
+                word = replace_special_characters(word)
 
                 ### Only get the possible tokenizations the first time you see each word
                 if word not in self.word_2_possible_tokenizations:
@@ -185,6 +186,7 @@ class Disambiguator_super(ABC):
         tokenized_sentence = []
         for word in sentence.split():
             word = dediacritize_normalize(word)
+            word = replace_special_characters(word)
             if word not in self.word_2_best_tokenization:
                 self.get_best_tokenization_per_word(word, baseline=baseline, debug=debug)
             tokenization = self.word_2_best_tokenization[word][0][1]
