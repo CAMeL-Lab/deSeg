@@ -14,7 +14,7 @@ This is a short demo. For a full description of the various models you can train
 
 * [Python 3](https://www.python.org/downloads/)
 * [Scipy](https://www.scipy.org)
-* [Camel Tools](https://camel-tools.readthedocs.io/en/latest/)
+* [CAMeL Tools](https://camel-tools.readthedocs.io/en/latest/)
 
 ### Demo
 
