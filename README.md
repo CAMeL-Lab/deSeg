@@ -22,6 +22,10 @@ Run the tokenizer on the sample data in interactive mode.
 
 ```python greedy_disambiguator.py -t sample.in -T sample.in -o sample.out -f joint -i False -I True```
 
+You can then of course take the trained model (the .pkl file generated during training) and test it on other corpora without having to retrain anything.
+
+```python greedy_disambiguator.py -T some_file.in -o some_file.out -c disambiguator_sample.in_built-in_joint_classConditional.pkl```
+
 ## Disambiguation Models
 
 We have implemented 12 methods of determining the optimal tokenization for a word form given some raw, unsupervised training data.
