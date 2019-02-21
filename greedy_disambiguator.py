@@ -203,7 +203,7 @@ class Disambiguator_super(ABC):
         ### Go through corpus again and assign the optimal tokenization to each word
         output = open(output_file, 'w')
         for sentence in open(input_file):
-            output.write('{}\n'.format(' '.join(self.tokenize_sentence(sentence))))
+            output.write('{}\n'.format(' '.join(self.tokenize_sentence(sentence, baseline=baseline))))
         output.close()
 
 
