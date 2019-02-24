@@ -18,25 +18,34 @@ This is a short demo. For a full description of the various models you can train
 
 ### Demo
 
-Run the tokenizer on the sample data in interactive mode.
+Train (unsupervised) the tokenizer on punctuation-separated input text (*sample.in*)
 
-```python greedy_disambiguator.py -t sample.in -T sample.in -o sample.out -f joint -i False -I True```
+```python greedy_disambiguator.py -m train -t sample.in -d built-in -f simple -i False```
 
-You can then of course take the trained model (the .pkl file generated during training) and test it on other corpora without having to retrain anything.
+Run the cached trained tokenizer from above in interactive mode
 
-```python greedy_disambiguator.py -T some_file.in -o some_file.out -c disambiguator_sample.in_built-in_joint_classConditional.pkl```
+```python greedy_disambiguator.py -m interactive -c disambiguator_sample.in_built-in_simple_classConditional.pkl```
 
-## Disambiguation Models
+Apply the cached trained tokenizer to a test file (*sample.in*) and generate a tokenized output (*sample.out*)
 
-We have implemented 12 methods of determining the optimal tokenization for a word form given some raw, unsupervised training data.
+```python greedy_disambiguator.py -m apply -c disambiguator_sample.in_built-in_simple_classConditional.pkl -T sample.in -o sample.out```
+
+## Training Disambiguation Models
+
+The Greedy Tokenizer is run in train mode with the following option: ```-m train```. It can train any of 5 models as follows:
 
 1. **Ignore classes, Simple clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. We consider each clitic to be a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f simple -i True```
 2. **Consider classes, Simple clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. We consider each clitic to be a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f simple -i False```
 3. **Ignore classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. If there are multiple proclitics, we consider the combination to be a single token, and the same goes for enclitics. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f complex -i True```
 4. **Consider classes, Complex clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. If there are multiple proclitics, we consider the combination to be a single token, and the same goes for enclitics. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f complex -i False```
-5. **Ignore classes, Joint clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. We consider the combination of all clitics (regardless of position before or after the base) to constitute a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f joint -i True```
-6. **Consider classes, Joint clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. We consider the combination of all clitics (regardless of position before or after the base) to constitute a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f joint -i False```
-* **Token maximization** This is a simple baseline version of each of the first 6 models in whereby we simply choose the potential tokenization that maximizes the number of tokens. The corresponding model in 1-6 is then used only as a tie-breaker. ```... -b most_tokens```
+5. **Ignore classes, Joint clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. We consider the combination of all clitics (regardless of position before or after the base) to constitute a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. Mathematically, this is equivalent to **Consider classes, Joint clitics** because there can only ever be a single clitic in the joint model, so it does not matter if classes are ignored or not. ```... -f joint -i True/False```
+
+## Applying Disambiguation Models
+
+To apply a trained disambiguator model, you need to specify the mode with the option ```-m apply```. You will also need to specify the cached trained disambiguator model you wish to use. A trained disambiguator is always stored in the working directory as a pickle file at the conclusion of training and the location of the file is written to standard output. You can specify which cached disambiguation model to apply during testing with the cached model option: ```-c [your_disambiguator.pkl]```
+
+You can run any trained model in either the standard or baseline implementation. If you do not specify a baseline argument, the trained models will tokenize in one of the 5 ways described above, as you trained it to. If you specify the option ```-b most_tokens```, it will run in a baseline mode such that it chooses the tokenization that maximizes the number of resulting tokens, only using the model 1-5 which it was trained for as a tie breaker.
+
 
 ## Usage Options
 
@@ -50,7 +59,7 @@ In addition to specifying the relevant disambiguation models as discussed above,
 * ```-s``` Separator. This is the charactor appended to the end of prefixal elements or beginning of suffixal elements to signal how they attach to the base. The separator is '+' by default.
 * ```-p``` Print options. ```most_frequent_tokens``` will print the most frequent tokens for each class to standard output. ```ranked_tokenizations_by_word``` will print the ranking over possible tokenizations for every single word in the test file.
 * ```-D``` Debug mode. If True, this will print statistics for every token in every possible analyses during test time (this works in interactive mode as well).
-* ```-I``` Interactive mode. If True, upon completing training, this allows the user to query the trained tokenizer from the command line.
+* ```-m``` In addition to *train* and *apply*, the greedy tokenizer can also be run in interactive mode by using the ```interactive``` option. This allows the user to query the trained tokenizer from the command line.
 
 ## Acknowledgments
 
