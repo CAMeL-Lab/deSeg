@@ -4,7 +4,7 @@ Given an analyzer class with a method that returns all possible tokenizations of
 
 The analyzer included in this repository runs on Modern Standard Arabic (which is the language of *sample.in*, the white space/punctuation separated sample training data). Our goal was to tokenize all clitics, but you can easily replace the analyzer and use the disambiguator to tokenize other pre/suffixal morphemes. The disambiguator just expects the *get_possible_tokenizations()* method of the analyzer to return a list of triples for each input word, where each triple is an analysis, comprised of a potentially empty list of prefixal elements, the base string, and a potentially empty list of suffixal elements.
 
-We intend for this implementation to be adapted to handle under resourced languages where an analyzer of closed-class morphemes can be cheaply built, but there is no lexical information available. That is to say that we have or can quickly build a database of the possible affixes and associated morpho-syntactic behavior, but we don't have any information about the existance or combinatorics of open-class stems. An analyzer built on such a database would produce the set of analyses that includes any allowable combination of prefixes and suffixes that could be realized by a given word, but it would not be able to prune any of these as invalid because it would not be able to check if the remaining stem is a valid open class stem or not.
+We intend for this implementation to be adapted to handle under resourced languages where an analyzer of closed class morphemes can be cheaply built, but there is no lexical information available. That is to say that we have or can quickly build a database of the possible affixes and associated morpho-syntactic behavior, but we don't have any information about the existance or combinatorics of open class stems. An analyzer built on such a database would produce the set of analyses that includes any allowable combination of prefixes and suffixes that could be realized by a given word, but it would not be able to prune any of these as invalid because it would not be able to check if the remaining stem is a valid open class stem or not.
 
 ## Quick Start
 
@@ -59,7 +59,7 @@ In addition to specifying the relevant disambiguation models as discussed above,
 * ```-s``` Separator. This is the charactor appended to the end of prefixal elements or beginning of suffixal elements to signal how they attach to the base. The separator is '+' by default.
 * ```-p``` Print options. ```most_frequent_tokens``` will print the most frequent tokens for each class to standard output. ```ranked_tokenizations_by_word``` will print the ranking over possible tokenizations for every single word in the test file.
 * ```-D``` Debug mode. If True, this will print statistics for every token in every possible analyses during test time (this works in interactive mode as well).
-* ```-m``` In addition to *train* and *apply*, the greedy tokenizer can also be run in interactive mode by using the ```interactive``` option. This allows the user to query the trained tokenizer from the command line.
+* ```-m``` In addition to ```train``` and ```apply```, the greedy tokenizer can also be run in interactive mode by using the ```interactive``` option. This allows the user to query the trained tokenizer from the command line.
 
 ## Acknowledgments
 
