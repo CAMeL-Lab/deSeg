@@ -1,4 +1,4 @@
-from sys import argv, stderr, stdout
+from sys import argv, stderr, stdout, exit
 import os
 from greedy_analyzer import Analyzer, dediacritize_normalize, replace_special_characters
 from abc import ABC, abstractmethod
@@ -168,7 +168,7 @@ class Disambiguator_super(ABC):
     def interact(self, debug=False):
 
         os.system('clear')
-        stdout.write('Welcome to interactive mode!\nYou can enter q to quit or c to continue at any time.\n\nSo like what do you wanna tokenize or whatever?\n\n: ')
+        stdout.write('Welcome to interactive mode!\nYou can enter q at any time to quit.\n\nSo like what do you wanna tokenize or whatever?\n\n: ')
 
         while True:
 
@@ -176,8 +176,7 @@ class Disambiguator_super(ABC):
             
             if sentence in ['q', 'Q']:
                 exit()
-            if sentence in ['c', 'C']:
-                break
+
             stdout.write('{}\n\n\n\n: '.format(' '.join(self.tokenize_sentence(sentence, debug=debug))))
 
 
@@ -410,7 +409,7 @@ def get_disambiguator_filename(args):
     if disambiguator_file == None:
         disambiguator_file = 'disambiguator_{}_{}_{}'.format(os.path.basename(args.train), os.path.basename(args.database), args.clitic_factorization)
         if args.ignore_class:
-            disambiguator_file += '_classless.pkl'
+            disambiguator_file += '_unconditional.pkl'
         else:
             disambiguator_file += '_classConditional.pkl'
         disambiguator_file = os.path.join(GREEDY_DIR, disambiguator_file)
@@ -438,6 +437,7 @@ def pickleOut(thingy, file):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('-m', '--mode', type=str, choices=['train', 'apply', 'interactive'], help='You can run the Greedy Tokenizer in either "train" or "apply" mode', required=True)
     parser.add_argument('-t', '--train', type=str, help='Location of the corpus from which we will learn the maximum likelihood greedy tokenization scheme', required=False, default=None)
     parser.add_argument('-T', '--test', type=str, help='Location of the corpus to which we will apply the learned maximum likelihood greedy tokenization scheme', required=False, default=None)
     parser.add_argument('-o', '--output', type=str, help='Location to which the tokenized corpus will be written out', required=False, default='output.tok')
@@ -448,48 +448,83 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--clitic_factorization', type=str, choices=['simple','complex','joint'], help="When computing likelihood of tokenization components, we can either consider the likelihood of each clitic token independently (simple), or we can consider the joint likelihood of the entire proclitic and the joint likelihood of the entire enclitic (complex), or we can consider the joint likelihood of the entire exponence, i.e., the cicumfix consisting of proclitic + enclitic (joint).", required=False, default='joint')
     parser.add_argument('-b', '--baseline', type=str, choices=['most_tokens'], help="Baseline model that primarily maximizes the number of tokens and secondarily maximizes likelihood.", required=False, default=None)
     parser.add_argument('-p', '--print_options', nargs='+', help="Optional print statements that can be executed for debugging purposes. They report the most (token) frequent proclictics, enclitics, and bases chosen by the disambiguator and/or a ranking for each word of the disambiguator's preferences over the analyzer's proposed tokenizations.", required=False, choices=['most_frequent_tokens', 'ranked_tokenizations_by_word'], default=[])
-    parser.add_argument('-I', '--interactive', type=str2bool, help="Run in interactive mode.. after training, the system will wait for user input to tokenize.", required=False, default=False)
     parser.add_argument('-D', '--debug', type=str2bool, help="Compute tokenizations in debug mode.", required=False, default=False)
+
+
 
     args = parser.parse_args()
     
 
-    # 0) Initialize the analyzer
-    stderr.write('\nInitializing analyzer with database "{}"..\n'.format(args.database))
-    analyzer = Analyzer(args.database, args.separator)
+    ### TRAINING MODE
+    if args.mode == 'train':
 
+        # Initialize the analyzer
+        stderr.write('\nInitializing analyzer with database "{}"..\n'.format(args.database))
+        analyzer = Analyzer(args.database, args.separator)
 
-    # 1) Load or train a disambiguator
-    disambiguator_file = get_disambiguator_filename(args)
-    try:
-        stderr.write('\nTrying to load a previously trained disambiguator model:\n\t"{}"\n'.format(os.path.basename(disambiguator_file)))
-        disambiguator = pickleIn(disambiguator_file)
-    except FileNotFoundError:
-        stderr.write('\nNone found.. Training disambiguator on "{}"..\n'.format(args.train))
-        if args.clitic_factorization == 'simple':
-            disambiguator = Disambiguator_simpleFactorization(analyzer, args.separator, args.ignore_class, args.clitic_factorization)
-        elif args.clitic_factorization == 'complex':
-            disambiguator = Disambiguator_complexFactorization(analyzer, args.separator, args.ignore_class, args.clitic_factorization)
-        elif args.clitic_factorization == 'joint':
-            disambiguator = Disambiguator_jointFactorization(analyzer, args.separator, args.ignore_class, args.clitic_factorization)
-        disambiguator.get_possible_tokenization_statistics(args.train)
+        # Train the disambiguator
+        disambiguator_file = get_disambiguator_filename(args)
+        try:
+            disambiguator = pickleIn(disambiguator_file)
+            command = 'python greedy_disambiguator.py -m apply -c {} -T [data_to_tokenize] -o [desired_output_file]'.format(disambiguator_file)
+            stderr.write('\nDisambiguator "{}" has already been trained!\nTo apply the disambiguator, run the following command:\n{}\n'.format(disambiguator_file, command))
+            exit()
+        except FileNotFoundError:
+            stderr.write('\nTraining disambiguator on "{}"..\n'.format(args.train))
+            if args.clitic_factorization == 'simple':
+                disambiguator = Disambiguator_simpleFactorization(analyzer, args.separator, args.ignore_class, args.clitic_factorization)
+            elif args.clitic_factorization == 'complex':
+                disambiguator = Disambiguator_complexFactorization(analyzer, args.separator, args.ignore_class, args.clitic_factorization)
+            elif args.clitic_factorization == 'joint':
+                disambiguator = Disambiguator_jointFactorization(analyzer, args.separator, args.ignore_class, args.clitic_factorization)
+            disambiguator.get_possible_tokenization_statistics(args.train)
+
+        # Save the trained disambiguator    
         stderr.write('\nCaching trained disambiguator..\n')
         pickleOut(disambiguator, disambiguator_file)
 
+        # Move on to bigger and better things
+        if len(args.print_options) > 0:
+            stderr.write('\nThe print_options can only be used in Apply mode. You can apply the trained disambiguator to "{}" though to print any relevant statistics from the training set.'.format(args.train))
+        stderr.write('\nDone! _\n     / \\ \n    /   \\    \n __/_____\\__\n   /     \\\n  | \\   / |\n| |   v   | |\n| |  ___  | |\n|  \\_____/  |\n \\____|____/\n      |\n      |\n      |\n      |\n      |\n     / \\\n    /   \\\
+        \n   /     \\\n  |       |\n  |       |\n  |       |\nSo yeah, your trained tokenizer is here: "{}"\n\n'.format(disambiguator_file))
 
-    # 2) Apply the trained disambiguator and write out tokenization
-    if args.interactive:
+
+
+    # Read in the trained disambiguator
+    else:
+        try:
+            stderr.write('\nReading in the pre-trained disambiguator "{}"\n'.format(args.cached_disambiguator))
+            disambiguator = pickleIn(args.cached_disambiguator)
+        except FileNotFoundError:
+            stderr.write('\tDisambiguator not found!!!\n'.format(disambiguator_file))
+            exit()
+
+
+
+    ### INTERACTIVE MODE
+    if args.mode == 'interactive':
+
         disambiguator.interact(debug=args.debug)
-    stderr.write('\nApplying maximum likelihood greedy tokenization..\n\tReading input from "{}" and writing output to: "{}"..\n'.format(args.test, args.output))
-    disambiguator.apply_tokenization(args.test, args.output, baseline=args.baseline, debug=args.debug)
 
-    # 3) Print out any requested information regarding the model
-    if 'most_frequent_tokens' in args.print_options:
-        disambiguator.print_most_frequent_tokens()
-    if 'ranked_tokenizations_by_word' in args.print_options:
-        disambiguator.print_ranked_tokenizations_by_word()
-    if args.print_options == None:
-        stderr.write('\n')
-        os.system('clear')
-    stderr.write('Done! _\n     / \\ \n    /   \\    \n __/_____\\__\n   /     \\\n  | o   o |\n| |   v   | |\n| | \\___/ | |\n|  \\_____/  |\n \\____|____/\n      |\n      |\n      |\n      |\n      |\n     / \\\n    /   \\\
-    \n   /     \\\n  |       |\n  |       |\n  |       |\nSo yeah, your tokenized output is here: "{}"\n\n'.format(args.output))
+
+
+    ### APPLY TOKENIZATION MODE
+    elif args.mode == 'apply':
+
+        # Apply the trained disambiguator and write out tokenization
+        stderr.write('\nApplying maximum likelihood greedy tokenization..\n\tReading input from "{}" and writing output to: "{}"..\n'.format(args.test, args.output))
+        disambiguator.apply_tokenization(args.test, args.output, baseline=args.baseline, debug=args.debug)
+
+        # Print out any requested information
+        if 'most_frequent_tokens' in args.print_options:
+            disambiguator.print_most_frequent_tokens()
+        if 'ranked_tokenizations_by_word' in args.print_options:
+            disambiguator.print_ranked_tokenizations_by_word()
+        if len(args.print_options) == 0:
+            stderr.write('\n')
+            os.system('clear')
+
+        # Shake your tailfeather
+        stderr.write('Done! _\n     / \\ \n    /   \\    \n __/_____\\__\n   /     \\\n  | o   o |\n| |   v   | |\n| | \\___/ | |\n|  \\_____/  |\n \\____|____/\n      |\n      |\n      |\n      |\n      |\n     / \\\n    /   \\\
+        \n   /     \\\n  |       |\n  |       |\n  |       |\nSo yeah, your tokenized output is here: "{}"\n\n'.format(args.output))
