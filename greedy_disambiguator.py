@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 from scipy.stats import gmean
 import pickle
 import argparse
+import random
+import Levenshtein
 
 
 GREEDY_DIR = os.path.dirname(os.path.realpath(argv[0]))
@@ -23,6 +25,7 @@ class Disambiguator_super(ABC):
 
         ### Determine how tokens are factorized, counted, and normalized
         self.class_2_tokens_2_frequency = {}
+        self.ngrams_2_frequency = {'':0, '|':0, 'OOV':1}
 
         ### If we're ignoring classes, set both token classes to 'all'
         if self.ignore_class:
@@ -46,7 +49,7 @@ class Disambiguator_super(ABC):
         ### OOV handling to be defined based on factorization
                         
 
-    def get_possible_tokenization_statistics(self, input_file):
+    def get_possible_tokenization_statistics(self, input_file, accomodation=None):
     
         ### Get frequency of all potential tokens identified by greedy tokenizer
             ## with tokens represented with factorization granularity
@@ -56,21 +59,20 @@ class Disambiguator_super(ABC):
                 word = dediacritize_normalize(word)
                 word = replace_special_characters(word)
 
-                ### Only get the possible tokenizations the first time you see each word
+                ### Only count the possible tokenizations for unique types
                 if word not in self.word_2_possible_tokenizations:
-                    possible_tokenizations = self.analyzer.get_possible_tokenizations(word)
+                    possible_tokenizations = self.analyzer.get_possible_tokenizations(word, accomodation=accomodation)
                     ### count tokens based on command line argument specifications
                     self.count_tokens(word, possible_tokenizations)
 
-                ### Update total token frequency counts given the word's possible tokens
-                for possible_tokenization in self.word_2_possible_tokenizations[word]['condition_classes']:
-                    for token_class in self.class_2_tokens_2_frequency:
-                        for token in possible_tokenization[token_class]:
-                            if token not in self.class_2_tokens_2_frequency[token_class]:
-                                self.class_2_tokens_2_frequency[token_class][token] = 0
-                            self.class_2_tokens_2_frequency[token_class][token] += possible_tokenization[token_class][token]
-
-        ### Normalize tokens in each class by the maximum frequency in that class
+        ### First normalize tokens by their likelihood of being a possible analysis
+            ## given that they occured as an ngram
+        stderr.write('\nNormalizing token likelihoods by their likelihood to appear as an analysis given they appear as an ngram\nPerforming the normalization by the specified classes: {}..\n'.format(', '.join(list('"{}"'.format(x) for x in self.class_2_tokens_2_frequency.keys()))))
+        for token_class in self.class_2_tokens_2_frequency:
+            for token in self.class_2_tokens_2_frequency[token_class]:
+                ngram_frequency = self.ngrams_2_frequency.get(token.replace(self.separator,''), self.ngrams_2_frequency['OOV'])
+                self.class_2_tokens_2_frequency[token_class][token] /= ngram_frequency
+        ### Then normalize tokens in each class by the maximum frequency in that class
         stderr.write('\nNormalizing token likelihoods by specified classes: {}..\n'.format(', '.join(list('"{}"'.format(x) for x in self.class_2_tokens_2_frequency.keys()))))
         for token_class in self.class_2_tokens_2_frequency:
             self.class_2_tokens_2_frequency[token_class] = normalize_by_maximum_frequency(self.class_2_tokens_2_frequency[token_class])
@@ -100,31 +102,36 @@ class Disambiguator_super(ABC):
         if word not in self.word_2_possible_tokenizations:
             self.handle_OOV(word)
 
+        if baseline in ['most_tokens', 'most_tokens_no_backoff']:
+            baseline_score = -1
+        elif baseline in ['smallest_stem', 'smallest_stem_no_backoff']:
+            baseline_score = 1000000
+
         ### Get scores for all possible tokenizations
         for tokenization_index in range(len(self.word_2_possible_tokenizations[word]['condition_classes'])):
             tokenization = self.word_2_possible_tokenizations[word]['condition_classes'][tokenization_index]
-            scores = []
-            score_base = 0
 
-            ## if you're just maximizing number of tokens: count them up
-            if baseline == 'most_tokens':
-                for token_class in tokenization:
-                    for token in tokenization[token_class]:
-                        score_base += 1000*tokenization[token_class][token]
+            scores = []
+            current_tokens = 0
+            current_stem_length = len(self.word_2_possible_tokenizations[word]['true_classes'][tokenization_index][1])
 
             ## if ignoring token classes: maximize geometric mean of all token likelihoods
             if self.ignore_class:
                 for token_class in tokenization:
                     for token in tokenization[token_class]:
-                        for i in range(tokenization[token_class][token]):
-                            scores.append(score_base + self.class_2_tokens_2_frequency[token_class][token])
+                        if token not in ['', '|']:
+                            current_tokens += 1
+                        for i in range(int(tokenization[token_class][token]+0.99)):
+                            scores.append(self.class_2_tokens_2_frequency[token_class][token])
 
             ## if distinguishing clitics from base: maximize geometric mean of A and B
             else:
                 # (A) geometric mean of clitic likelihoods
                 for token in tokenization['clitic']:
-                    for i in range(tokenization['clitic'][token]):
-                        scores.append(score_base + self.class_2_tokens_2_frequency['clitic'][token])
+                    if token not in ['', '|']:
+                            current_tokens += 1
+                    for i in range(int(tokenization['clitic'][token]+0.99)):
+                        scores.append(self.class_2_tokens_2_frequency['clitic'][token])
                 # if no clitics, just consider the base likelihood
                 if len(scores) > 0:
                     scores = [gmean(scores)]
@@ -132,7 +139,8 @@ class Disambiguator_super(ABC):
                 # (B) base likelihood
                 assert len(tokenization['base']) == 1
                 for base in tokenization['base']:
-                    scores.append(score_base + self.class_2_tokens_2_frequency[self.base_class][base])
+                    current_tokens += 1
+                    scores.append(self.class_2_tokens_2_frequency[self.base_class][base])
 
             ### Record score
             score = gmean(scores)
@@ -140,14 +148,37 @@ class Disambiguator_super(ABC):
                 stdout.write('{}\n\t{}\n\t{}\n\t{}\n'.format(word, str(tokenization), ', '.join(str(round(x, 5)) for x in scores), str(round(score, 5))))
             tokenization = self.word_2_possible_tokenizations[word]['true_classes'][tokenization_index]
 
-            self.word_2_best_tokenization[word].append([score, tokenization])
+            ### Handle most_tokens baselines
+            if baseline in ['most_tokens', 'most_tokens_no_backoff']:
+                if current_tokens > baseline_score:
+                    baseline_score = current_tokens
+                    self.word_2_best_tokenization[word] = [[score, tokenization]]
+                elif current_tokens == baseline_score:
+                    self.word_2_best_tokenization[word].append([score, tokenization])
+
+            ### Handle smallest_stem baselines
+            elif baseline in ['smallest_stem', 'smallest_stem_no_backoff']:
+                if current_stem_length < baseline_score:
+                    baseline_score = current_stem_length
+                    self.word_2_best_tokenization[word] = [[score, tokenization]]
+                elif current_stem_length == baseline_score:
+                    self.word_2_best_tokenization[word].append([score, tokenization])
+
+            else:
+                self.word_2_best_tokenization[word].append([score, tokenization])
 
         if len(self.word_2_best_tokenization[word]) == 0:
             stderr.write('NO TOKENIZATIONS FOUND!!!{}\n'.format('\n\t'.join(str(x) for x in [word, word_2_possible_tokenizations[word]])))
             exit()
 
         else:
-            self.word_2_best_tokenization[word].sort(reverse=True)
+            if baseline in ['most_tokens_no_backoff', 'smallest_stem_no_backoff']:
+                random.shuffle(self.word_2_best_tokenization[word])
+            else:
+                self.word_2_best_tokenization[word].sort(reverse=True)
+
+        # print(word)
+        # print('FINAL RANKING:\n\t{}'.format('\n\t'.join(list('{}\n\t\t{}'.format(str(x[1]), str(x[0])) for x in self.word_2_best_tokenization[word]))))
 
 
     def print_ranked_tokenizations_by_word(self):
@@ -165,7 +196,7 @@ class Disambiguator_super(ABC):
             # stdout.write('{}\n'.format('\n'.join(['\t{}\t{}'.format(' '.join([' '.join(x[1][0]), x[1], ' '.join(x[1][2])]), str(round(x[0], 3))) for x in self.word_2_best_tokenization[word]])))
 
 
-    def interact(self, debug=False):
+    def interact(self, debug=False, baseline=None):
 
         os.system('clear')
         stdout.write('Welcome to interactive mode!\nYou can enter q at any time to quit.\n\nSo like what do you wanna tokenize or whatever?\n\n: ')
@@ -177,7 +208,7 @@ class Disambiguator_super(ABC):
             if sentence in ['q', 'Q']:
                 exit()
 
-            stdout.write('{}\n\n\n\n: '.format(' '.join(self.tokenize_sentence(sentence, debug=debug))))
+            stdout.write('{}\n\n\n\n: '.format(' '.join(self.tokenize_sentence(sentence, debug=debug, baseline=baseline))))
 
 
     def tokenize_sentence(self, sentence, baseline=None, debug=False):
@@ -215,25 +246,62 @@ class Disambiguator_simpleFactorization(Disambiguator_super):
 
         for tokenization in possible_tokenizations:
 
+            cat_tok = '{}{}{}'.format(''.join(tokenization[0]), tokenization[1], ''.join(tokenization[2])).replace(self.separator, '')
+            discounted_increment = 1 / (Levenshtein.distance(word, cat_tok) + 1)
+
             base = tokenization[1]
             ### register base
-            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:1}})
+            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:discounted_increment}})
 
             ### prepare to register clitics
             if self.clitic_class != self.base_class:
                 self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class] = {}
 
+            ## check if proclitic is blank
+            if len(tokenization[0]) == 0:
+                if '' not in self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class]:
+                    self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][''] = 0
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][''] += discounted_increment
+
+            ## record proclitics
             for proclitic in tokenization[0]:
 
                 if proclitic not in self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class]:
                     self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][proclitic] = 0
-                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][proclitic] += 1
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][proclitic] += discounted_increment
 
+            ## check if enclitic is blank
+            if len(tokenization[2]) == 0:
+                if '' not in self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class]:
+                    self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][''] = 0
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][''] += discounted_increment
+
+            ## record enclitics
             for enclitic in tokenization[2]:
 
                 if enclitic not in self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class]:
                     self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][enclitic] = 0
-                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][enclitic] += 1
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][enclitic] += discounted_increment
+
+        ### Update total token frequency counts given the word's possible tokens
+        for possible_tokenization in self.word_2_possible_tokenizations[word]['condition_classes']:
+            for token_class in self.class_2_tokens_2_frequency:
+                for token in possible_tokenization[token_class]:
+
+                    if token not in self.class_2_tokens_2_frequency[token_class]:
+                        self.class_2_tokens_2_frequency[token_class][token] = 0
+                    self.class_2_tokens_2_frequency[token_class][token] += possible_tokenization[token_class][token]
+
+        ### Update ngram frequency counts
+        len_word = len(word)
+        len_word_1 = len_word + 1
+        self.ngrams_2_frequency[''] += len_word_1
+        for start in range(len_word):
+            for finish in range(start+1, len_word_1):
+                ngram = word[start:finish]
+                if ngram not in self.ngrams_2_frequency:
+                    self.ngrams_2_frequency[ngram] = 0
+                self.ngrams_2_frequency[ngram] += 1
 
     ### And how OOVs are handled with simple factorization
     def handle_OOV(self, word):
@@ -244,16 +312,24 @@ class Disambiguator_simpleFactorization(Disambiguator_super):
 
         for tokenization in possible_tokenizations:
 
+            cat_tok = '{}{}{}'.format(''.join(tokenization[0]), tokenization[1], ''.join(tokenization[2])).replace(self.separator, '')
+            discounted_increment = 1 / (Levenshtein.distance(word, cat_tok) + 1)
+
             base = tokenization[1]
             if base not in self.class_2_tokens_2_frequency[self.base_class]:
                 base = 'OOV'
 
             ### register base
-            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:1}})
+            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:discounted_increment}})
 
             ### prepare to register clitics
             if self.clitic_class != self.base_class:
                 self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class] = {}
+
+            if len(tokenization[0]) == 0:
+                if '' not in self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class]:
+                    self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][''] = 0
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][''] += discounted_increment
 
             for proclitic in tokenization[0]:
 
@@ -262,7 +338,12 @@ class Disambiguator_simpleFactorization(Disambiguator_super):
 
                 if proclitic not in self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class]:
                     self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][proclitic] = 0
-                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][proclitic] += 1
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][proclitic] += discounted_increment
+
+            if len(tokenization[2]) == 0:
+                if '' not in self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class]:
+                    self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][''] = 0
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][''] += discounted_increment
 
             for enclitic in tokenization[2]:
 
@@ -271,7 +352,7 @@ class Disambiguator_simpleFactorization(Disambiguator_super):
 
                 if enclitic not in self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class]:
                     self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][enclitic] = 0
-                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][enclitic] += 1
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][enclitic] += discounted_increment
 
 
 class Disambiguator_complexFactorization(Disambiguator_super):
@@ -283,19 +364,42 @@ class Disambiguator_complexFactorization(Disambiguator_super):
 
         for tokenization in possible_tokenizations:
 
+
+
             proclitic = ''.join(tokenization[0])
             enclitic = ''.join(tokenization[2])
             base = tokenization[1]
 
+            cat_tok = '{}{}{}'.format(proclitic, base, enclitic).replace(self.separator, '')
+            discounted_increment = 1 / (Levenshtein.distance(word, cat_tok) + 1)
+
             # register base
-            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:1}})
+            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:discounted_increment}})
 
             # register complex clitics that exist
             if self.base_class != self.clitic_class:
                 self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class] = {}
             for clitic in [proclitic, enclitic]:
-                if len(clitic) > 0:
-                    self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][clitic] = 1
+                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][clitic] = discounted_increment
+
+        ### Update total token frequency counts given the word's possible tokens
+        for possible_tokenization in self.word_2_possible_tokenizations[word]['condition_classes']:
+            for token_class in self.class_2_tokens_2_frequency:
+                for token in possible_tokenization[token_class]:
+                    if token not in self.class_2_tokens_2_frequency[token_class]:
+                        self.class_2_tokens_2_frequency[token_class][token] = 0
+                    self.class_2_tokens_2_frequency[token_class][token] += possible_tokenization[token_class][token]
+
+        ### Update ngram frequency counts
+        len_word = len(word)
+        len_word_1 = len_word + 1
+        self.ngrams_2_frequency[''] += len_word_1
+        for start in range(len_word):
+            for finish in range(start+1, len_word_1):
+                ngram = word[start:finish]
+                if ngram not in self.ngrams_2_frequency:
+                    self.ngrams_2_frequency[ngram] = 0
+                self.ngrams_2_frequency[ngram] += 1
 
     ### Define how OOVs are handled with complex facorization
     def handle_OOV(self, word):
@@ -306,32 +410,28 @@ class Disambiguator_complexFactorization(Disambiguator_super):
 
         for tokenization in possible_tokenizations:
 
-            pro = True
             proclitic = ''.join(tokenization[0])
-            if len(proclitic) == 0:
-                pro = False
-            elif proclitic not in self.class_2_tokens_2_frequency[self.clitic_class]:
-                proclitic = 'OOV'
-            en = True
             enclitic = ''.join(tokenization[2])
-            if len(enclitic) == 0:
-                en = False
-            elif enclitic not in self.class_2_tokens_2_frequency[self.clitic_class]:
-                enclitic = 'OOV'
             base = tokenization[1]
+
+            cat_tok = '{}{}{}'.format(proclitic, base, enclitic).replace(self.separator, '')
+            discounted_increment = 1 / (Levenshtein.distance(word, cat_tok) + 1)
+
+            if proclitic not in self.class_2_tokens_2_frequency[self.clitic_class]:
+                proclitic = 'OOV'
+            if enclitic not in self.class_2_tokens_2_frequency[self.clitic_class]:
+                enclitic = 'OOV'
             if base not in self.class_2_tokens_2_frequency[self.base_class]:
                 base = 'OOV'
 
             # register base
-            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:1}})
+            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:discounted_increment}})
 
             # register complex clitics that exist
             if self.base_class != self.clitic_class:
                 self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class] = {}
-            if pro:
-                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][proclitic] = 1
-            if en:
-                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][enclitic] = 1
+            self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][proclitic] = discounted_increment
+            self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][enclitic] = discounted_increment
 
 
 class Disambiguator_jointFactorization(Disambiguator_super):
@@ -346,14 +446,59 @@ class Disambiguator_jointFactorization(Disambiguator_super):
             clitic = '{}|{}'.format(''.join(tokenization[0]), ''.join(tokenization[2]))
             base = tokenization[1]
 
+            cat_tok = '{}{}{}'.format(''.join(tokenization[0]), base, ''.join(tokenization[2])).replace(self.separator, '')
+            discounted_increment = 1 / (Levenshtein.distance(word, cat_tok) + 1)
+
             # register base
-            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:1}})
+            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:discounted_increment}})
 
             # register circumclitic if it exists
             if self.base_class != self.clitic_class:
                 self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class] = {}
-            if len(clitic) > 1:
-                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][clitic] = 1
+            self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][clitic] = discounted_increment
+
+        ### Update total token frequency counts given the word's possible tokens
+        for possible_tokenization in self.word_2_possible_tokenizations[word]['condition_classes']:
+            for token_class in self.class_2_tokens_2_frequency:
+                for token in possible_tokenization[token_class]:
+                    if token not in self.class_2_tokens_2_frequency[token_class]:
+                        self.class_2_tokens_2_frequency[token_class][token] = 0
+                    self.class_2_tokens_2_frequency[token_class][token] += possible_tokenization[token_class][token]
+
+        ### Update ngram frequency counts
+        len_word = len(word)
+        len_word_1 = len_word + 1
+        self.ngrams_2_frequency[''] += len_word_1
+        self.ngrams_2_frequency['|'] += len_word_1 * ( len_word/2 )
+        for start in range(len_word):
+            for finish in range(start+1, len_word_1):
+                ngram = word[start:finish]
+
+                ### count joint ngrams containing both a proclitic and enclitic
+                joint_ngram = '{}|'.format(ngram)
+                for start2 in range(finish, len_word):
+                    for finish2 in range(start2+1, len_word_1):
+                        joint_ngram = ''.join([joint_ngram,word[start2:finish2]])
+                        if joint_ngram not in self.ngrams_2_frequency:
+                            self.ngrams_2_frequency[joint_ngram] = 0
+                        self.ngrams_2_frequency[joint_ngram] += 1
+
+                ### count normal ngrams
+                if ngram not in self.ngrams_2_frequency:
+                    self.ngrams_2_frequency[ngram] = 0
+                self.ngrams_2_frequency[ngram] += 1
+
+                ### count joint ngrams where there is no enclitic
+                joint_ngram = '{}|'.format(ngram)
+                if joint_ngram not in self.ngrams_2_frequency:
+                    self.ngrams_2_frequency[joint_ngram] = 0
+                self.ngrams_2_frequency[joint_ngram] += 1
+
+                ### count joint ngrams where there is no proclitic
+                joint_ngram = '|{}'.format(ngram)
+                if joint_ngram not in self.ngrams_2_frequency:
+                    self.ngrams_2_frequency[joint_ngram] = 0
+                self.ngrams_2_frequency[joint_ngram] += 1
 
     ### Define how OOVs are handled with joint facorization
     def handle_OOV(self, word):
@@ -364,37 +509,38 @@ class Disambiguator_jointFactorization(Disambiguator_super):
 
         for tokenization in possible_tokenizations:
 
-            cl = True
             clitic = '{}|{}'.format(''.join(tokenization[0]), ''.join(tokenization[2]))
-            if len(clitic) == 1:
-                cl = False
-            elif clitic not in self.class_2_tokens_2_frequency[self.clitic_class]:
+            if clitic not in self.class_2_tokens_2_frequency[self.clitic_class]:
                 clitic = 'OOV'
             base = tokenization[1]
+            cat_tok = '{}{}{}'.format(''.join(tokenization[0]), base, ''.join(tokenization[2])).replace(self.separator, '')
+            discounted_increment = 1 / (Levenshtein.distance(word, cat_tok) + 1)
             if base not in self.class_2_tokens_2_frequency[self.base_class]:
                 base = 'OOV'
 
             # register base
-            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:1}})
+            self.word_2_possible_tokenizations[word]['condition_classes'].append({self.base_class:{base:discounted_increment}})
 
             # register circumclitic if it exists
             if self.base_class != self.clitic_class:
                 self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class] = {}
-            if cl:
-                self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][clitic] = 1
+            self.word_2_possible_tokenizations[word]['condition_classes'][-1][self.clitic_class][clitic] = discounted_increment
 
 
 def normalize_by_maximum_frequency(dictionary):
+
     values = list(dictionary.values())
     max_frequency = max(values)
     smoothing_minimum = min(values)/max_frequency
     for key in dictionary:
         dictionary[key] /= max_frequency
     dictionary['OOV'] = smoothing_minimum
+
     return dictionary
 
 
 def str2bool(v):
+
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
     elif v.lower() in ('no', 'false', 'f', 'n', '0'):
@@ -407,7 +553,7 @@ def get_disambiguator_filename(args):
 
     disambiguator_file = args.cached_disambiguator
     if disambiguator_file == None:
-        disambiguator_file = 'disambiguator_{}_{}_{}'.format(os.path.basename(args.train), os.path.basename(args.database), args.clitic_factorization)
+        disambiguator_file = 'disambiguator_{}_{}_{}_minBase{}'.format(os.path.basename(args.train), os.path.basename(args.database), args.clitic_factorization, str(args.min_base_length))
         if args.ignore_class:
             disambiguator_file += '_unconditional.pkl'
         else:
@@ -442,25 +588,29 @@ if __name__ == '__main__':
     parser.add_argument('-T', '--test', type=str, help='Location of the corpus to which we will apply the learned maximum likelihood greedy tokenization scheme', required=False, default=None)
     parser.add_argument('-o', '--output', type=str, help='Location to which the tokenized corpus will be written out', required=False, default='output.tok')
     parser.add_argument('-d', '--database', type=str, help='Database to be used by the analyzer', required=False, default='built-in')
+    parser.add_argument('-a', '--accomodation', type=str, choices=['built-in', 'DA'], help='Triggers ad hoc accomodation available to the analyzer necessary to reformat certain databases outputs into the expected format', required=False, default=None)
     parser.add_argument('-c', '--cached_disambiguator', type=str, help='Where to load or store the trained disambiguator', required=False, default=None)
     parser.add_argument('-s', '--separator', type=str, help='Separator used to mark clitic boundaries', required=False, default='+')
+    parser.add_argument('-l', '--min_base_length', type=int, help='Minimum length of the base word after separating clitics for the analysis to be considered feasible.', required=False, default=1)
     parser.add_argument('-i', '--ignore_class', type=str2bool, help="If True, optimal tokenizations are chosen based on geometric mean likelihood all proposed component tokens. Otherwise, token likelihoods are calculated conditional on class, i.e., clitic vs. base, and normalized by the most likely member of their class. Then, optimal tokenizations are chosen based on the geometric mean of A and B; where A is the geometric mean of component clitic likelihoods and B is the base likelihood. When no clitics are proposed, the tokenization's score is simply the base likelihood.", required=False, default=False)
     parser.add_argument('-f', '--clitic_factorization', type=str, choices=['simple','complex','joint'], help="When computing likelihood of tokenization components, we can either consider the likelihood of each clitic token independently (simple), or we can consider the joint likelihood of the entire proclitic and the joint likelihood of the entire enclitic (complex), or we can consider the joint likelihood of the entire exponence, i.e., the cicumfix consisting of proclitic + enclitic (joint).", required=False, default='joint')
-    parser.add_argument('-b', '--baseline', type=str, choices=['most_tokens'], help="Baseline model that primarily maximizes the number of tokens and secondarily maximizes likelihood.", required=False, default=None)
+    parser.add_argument('-b', '--baseline', type=str, choices=['most_tokens', 'smallest_stem', 'most_tokens_no_backoff', 'smallest_stem_no_backoff'], help="Baseline models that primarily maximize the number of tokens or minimize the length of the base and either secondarily maximize likelihood as a tie breaker or randomly pick a tie breaker which is used consistently for every instance of the type in question.", required=False, default=None)
     parser.add_argument('-p', '--print_options', nargs='+', help="Optional print statements that can be executed for debugging purposes. They report the most (token) frequent proclictics, enclitics, and bases chosen by the disambiguator and/or a ranking for each word of the disambiguator's preferences over the analyzer's proposed tokenizations.", required=False, choices=['most_frequent_tokens', 'ranked_tokenizations_by_word'], default=[])
     parser.add_argument('-D', '--debug', type=str2bool, help="Compute tokenizations in debug mode.", required=False, default=False)
 
 
+    args = parser.parse_args()    
 
-    args = parser.parse_args()
-    
 
     ### TRAINING MODE
     if args.mode == 'train':
 
         # Initialize the analyzer
         stderr.write('\nInitializing analyzer with database "{}"..\n'.format(args.database))
-        analyzer = Analyzer(args.database, args.separator)
+        analyzer = Analyzer(args.database, args.separator, args.min_base_length)
+
+        if analyzer.database_file == 'built-in':
+            args.accomodation = args.database
 
         # Train the disambiguator
         disambiguator_file = get_disambiguator_filename(args)
@@ -477,7 +627,7 @@ if __name__ == '__main__':
                 disambiguator = Disambiguator_complexFactorization(analyzer, args.separator, args.ignore_class, args.clitic_factorization)
             elif args.clitic_factorization == 'joint':
                 disambiguator = Disambiguator_jointFactorization(analyzer, args.separator, args.ignore_class, args.clitic_factorization)
-            disambiguator.get_possible_tokenization_statistics(args.train)
+            disambiguator.get_possible_tokenization_statistics(args.train, accomodation=args.accomodation)
 
         # Save the trained disambiguator    
         stderr.write('\nCaching trained disambiguator..\n')
@@ -505,7 +655,7 @@ if __name__ == '__main__':
     ### INTERACTIVE MODE
     if args.mode == 'interactive':
 
-        disambiguator.interact(debug=args.debug)
+        disambiguator.interact(debug=args.debug, baseline=args.baseline)
 
 
 

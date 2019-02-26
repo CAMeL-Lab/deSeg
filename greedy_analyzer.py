@@ -31,10 +31,11 @@ class Analyzer:
         It's simply for debugging/benchmarking on MSA where we have lots of gold data
     """
 
-    def __init__(self, database, separator):
+    def __init__(self, database, separator, min_base_length):
 
         self.separator = separator
         self.database_file = database
+        self.min_base_length = min_base_length
         ### The free database does not distinguish base from affixal tokens in D3tok
             ## If you use the free database, here's a cheap hack to predict the base token
         if self.database_file == 'built-in':
@@ -51,13 +52,53 @@ class Analyzer:
                 'DEM_PRON', 'DEM_PRON_F', 'DEM_PRON_FD', 'DEM_PRON_MD', 'DEM_PRON_FS', 'FUT_PART',
                 'NEG_PART', 'VOC_PART', 'NOUN_NUM', 'PREP', 'SUB_CONJ', 'CONJ', 'INTERJ',
                 'INTERROG_ADV', 'INTERROG_PART', 'EXCLAM_PRON', 'NUMERIC_COMMA', 'PUNC', 'DET']
+
         else:
+            ### Try to load the specified database in analyze mode
             try:
                 self.database = CalimaStarDB(database, 'a')
             except FileNotFoundError:
-                stderr.write('\nCould not locate database {}\nLoading built in database almor-msa\n'.format(database))
+                stderr.write('\nCould not locate database {}\nLoading built-in database almor-msa\n'.format(database))
                 self.database = CalimaStarDB.builtin_db('almor-msa', 'a')
-        self.analyzer = CalimaStarAnalyzer(self.database, 'NOAN_PROP')
+                self.database_file = 'built-in'
+        self.analyzer = CalimaStarAnalyzer(self.database, 'NOAN_ALL')
+
+
+    def accomodate_DA_database(self, word, analysis):
+
+        ### DA doesn't give D3tok so we need to parse BW
+        analysis_bw = analysis['bw'].split('#')
+        if len(analysis_bw) == 1:
+            analysis_bw = ['', analysis_bw[0], '']
+        assert len(analysis_bw) == 3
+        new_base = []
+        old_base = analysis_bw[1].split('+')
+        for i in range(len(old_base)):
+            if '(null)' not in old_base[i]:
+                new_base.append(old_base[i])
+
+        new_base = '+'.join(new_base)
+        assert '(null)' not in new_base
+        analysis_bw[1] = new_base
+
+        tokens = []
+
+        proclitics = analysis_bw[0].split('+')
+        for pro in proclitics:
+            tokens.append('{}+_'.format(pro.split('/')[0]))
+
+        base = analysis_bw[1].split('+')
+        joined_base = ''
+        for b in base:
+            joined_base += b.split('/')[0]
+        tokens.append(joined_base)
+
+        enclitics = analysis_bw[2].split('+')
+        for en in enclitics:
+            tokens.append('_+{}'.format(en.split('/')[0]))
+
+                
+        return ''.join(tokens)
 
 
     def accomodate_built_in_database(self, word, analysis):
@@ -105,14 +146,16 @@ class Analyzer:
         return ''.join(tokens)
 
 
-    def get_possible_tokenizations(self, word):
+    def get_possible_tokenizations(self, word, accomodation=None):
 
         ### assumes word is already dediacritized alif-yaa normalized
         possible_tokenizations = []
 
         ### Run the analyzer
         try:
+
             analyses = self.analyzer.analyze(word)
+
             completed_analyses = {}
 
             ### For each analysis
@@ -121,12 +164,16 @@ class Analyzer:
                 possible_tokenization = [[], None, []]
 
                 ### Parse Almor database analysis
-                if self.database_file == 'built-in':
+                if accomodation == 'built-in':
                     analysis = self.accomodate_built_in_database(word, analysis)
+
+                ### Parse DA database analysis
+                elif accomodation == 'DA':
+                    analysis = self.accomodate_DA_database(word, analysis)
 
                 ### Parse Sama database analysis
                 else:
-                    analysis = analysis['d3tok']
+                    analysis = analysis.get('d3tok', None)
                 
                 ### If no analysis, put the entire word as the base
                 if analysis == None:
@@ -163,30 +210,18 @@ class Analyzer:
                                 ### handle base
                                 else:
                                     possible_tokenization[1] = token
-                        ### Finish andling words entirely consisting of diacritics
+                        ### Finish handling words entirely consisting of diacritics
                         if all_tokens_empty:
                             possible_tokenization[1] = word
 
-                    ### Exception handling for database errors
-                        # 3lY as a proclitic
-                        # it shouldn't be possible to have an empty base
-                    good_analysis = True
-                    if possible_tokenization[1] == None or len(possible_tokenization[1]) == 0:
-                        ## 3lY should not be a proclitic.. database bug
-                        if ['+علي'] == possible_tokenization[0][0]:
-                            good_analysis = False
-                        ## empty base
-                        else:
-                            possible_tokenization[1] = word
-
-                    ### Add good tokenization analyses to the set of possible tokenizations
-                    if good_analysis:
+                    ### Exception handling for ill-formed bases
+                    if possible_tokenization[1] != None and len(possible_tokenization[1]) >= self.min_base_length:
                         if possible_tokenization not in possible_tokenizations:
                             possible_tokenizations.append(possible_tokenization)
 
 
         ### If inconsistency in the database, word will be the base with no clitics
-        except KeyError:
+        except FileNotFoundError:
             possible_tokenization = [[], word, []]
             possible_tokenizations.append(possible_tokenization)
             stderr.write('\nDatabase key error for {}\nUsing default tokenization analysis {}\n'.format(word, str(possible_tokenizations)))
@@ -221,11 +256,63 @@ def replace_special_characters(word):
 
 if __name__ == '__main__':
 
-    analyzer = Analyzer(argv[1], '+')
+    # analyzer = argv[1]
+    # input_file = argv[2]
 
+    # all_analyses = {}
+    # analyzer = Analyzer(analyzer, '+')
+    # for line in open(input_file):
+    #     for word in line.split():
+    #         if word not in all_analyses:
+    #             word = dediacritize_normalize(word)
+    #             all_analyses[word] = {}
+    #             analyses = analyzer.analyzer.analyze(word)
+    #             for analysis in analyses:
+    #                 if analysis['d3tok'] != None:
+    #                     all_analyses[word][analysis['d3tok']] = True
+    #     break
+
+    # for word in all_analyses:
+    #     print(word)
+    #     for analysis in all_analyses[word]:
+    #         print('\t{}'.format(analysis))
+
+    # exit()
+
+    analyzer = Analyzer(argv[1], '+')
+    input_file = argv[2]
+    database_accomodation = None 
+    if len(argv) > 3:
+        database_accomodation = argv[3]
+        assert database_accomodation in ['built-in', 'DA']
+    if analyzer.database_file == 'built-in':
+        database_accomodation = analyzer.database_file
+
+    snum = 0
     words_to_possible_tokenizations = {}
-    for sent in open(argv[2]):
+    for sent in open(input_file):
+        snum += 1
         for word in sent.split():
             word = dediacritize_normalize(word)
             if word not in words_to_possible_tokenizations:
-                words_to_possible_tokenizations[word] = analyzer.get_possible_tokenizations(word)
+                words_to_possible_tokenizations[word] = analyzer.get_possible_tokenizations(word, accomodation=database_accomodation)
+        # print(snum)
+
+
+        break
+    for word in words_to_possible_tokenizations:
+        print(word)
+        for tokenization in words_to_possible_tokenizations[word]:
+            print('\tPRO: {}'.format(''.join(tokenization[0])))
+            print('\tBASE: {}'.format(tokenization[1]))
+            print('\tEN: {}'.format(''.join(tokenization[2])))
+            print()
+
+
+
+
+
+
+
+
+
