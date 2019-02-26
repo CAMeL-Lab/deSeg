@@ -44,9 +44,6 @@ The Greedy Tokenizer is run in train mode with the following option: ```-m train
 
 To apply a trained disambiguator model, you need to specify apply mode with the option ```-m apply```. You will also need to specify the cached trained disambiguator model you wish to use. A trained disambiguator is always stored in the working directory as a pickle file at the conclusion of training and the location of the file is written to standard output. You can specify which cached disambiguation model to apply during testing with the cached model option: ```-c [your_disambiguator.pkl]```
 
-You can run any trained model in either the standard or one of the baseline implementations. If you do not specify a baseline argument, the trained models will tokenize in one of the 5 ways described above, as you trained it to. If you specify the option ```-b most_tokens```, it will run in a baseline mode such that it chooses the tokenization that maximizes the number of resulting tokens, only using the model 1-5 which it was trained for as a tie breaker.
-
-
 ## Usage Options
 
 In addition to specifying the relevant disambiguation models as discussed above, you can also specify the following options at the command line:
