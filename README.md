@@ -1,66 +1,54 @@
-# Greedy Tokenizer
+# Delexical Segmentation
 
-Given an analyzer class with a method that returns all possible tokenizations of an input word, we train a greedy, unsupervised tokenization model to disambiguate these possible tokenizations. Tokenization depends only on statistics of observed possible tokenizations during training, i.e., context is not considered in this implementation. Thus, all word types will be deterministically tokenized regardless of context. The quality of the tokenization is completely dependent on the assumption that tokens frequently proposed by the analyzer are more likely to appear in the correct tokenization than tokens which are proposed less frequently.
+Given a **grammar** describing the combinatorics of some (or all) closed class morphemes and an **analyzer** which uses only this grammar to generate all possible segmentation analyses allowing for any open class base, we train a **disambiguator** on a raw corpus to select the correct segmentation. For example, a simple grammar for English might allow for suffixal morpheme combinations such as '+ing', '+ing +s', and '+s', as attested in 'craving', 'happenings', and 'creates', respectively, though without any knowledge of open class base forms, our analyzer would provide at least three analyses of 'happenings': (1) 'happenings' (2) 'happening +s' (3) 'happen +ing +s'. Then the disambiguator would be charged with selecting the correct analysis. Obviously, knowledge of open class base forms would allow you to perform greedy, maximum matching such that a bad analysis like (1) is thrown out, but creating the open class resources necessary for this is expensive and not feasible for languages characterized by unstandardized spelling, diglossia, or otherwise wide dialectal variation. Hence, delexical segmentation can be a highly cost effective segmentation solution for morphologically rich languages as it relies on only a grammar of closed class forms that can be written in a few hours.
 
-The analyzer included in this repository runs on Modern Standard Arabic (which is the language of *sample.in*, the white space/punctuation separated sample training data). Our goal was to tokenize all clitics, but you can easily replace the analyzer and use the disambiguator to tokenize other pre/suffixal morphemes. The disambiguator just expects the *get_possible_tokenizations()* method of the analyzer to return a list of triples for each input word, where each triple is an analysis, comprised of a potentially empty list of prefixal elements, the base string, and a potentially empty list of suffixal elements.
+The analyzer however, will of course over generate, so the disambiguator must be able to choose the correct analysis with some degree of accuracy. Our tool considers three factors for unsupervised disambiguation: (1) fertility of the proposed base (number of unique combinations of morphemes that can be immediately pre/postpended to the proposed base) (2) length of the proposed base (if you greedily maximum match on the closed class morphemes, you are effectively minimizing the length of the base) (3) frequency count with which the proposed base occurs as a stand-alone word in the raw corpus (bases in many languages are highly likely to be free morphemes, meaning that they are likely to occur in the corpus as their own word). You can specify a preference over these factors from the command line during training, though the best performance seems to be ranking base fertility above base minimization above base count.
 
-We intend for this implementation to be adapted to handle under resourced languages where an analyzer of closed class morphemes can be cheaply built, but there is no lexical information available. That is to say that we have or can quickly build a database of the possible affixes and associated morpho-syntactic behavior, but we don't have any information about the existance or combinatorics of open class stems. An analyzer built on such a database would produce the set of analyses that includes any allowable combination of prefixes and suffixes that could be realized by a given word, but it would not be able to prune any of these as invalid because it would not be able to check if the remaining stem is a valid open class stem or not.
+The analyzer included in this repository runs on Modern Standard Arabic (which is the language of *sample.in*, the white space/punctuation separated sample training data). Our goal was to segment all clitics, but we could not release the grammar we used for copyright reasons, so instead we release a free grammar that has been hackily accomodated in the analyzer to segment all affixes. The grammar was designed as a lexical tool, but we stripped the open class stems for this project. You can easily write your own grammar and tweak the Analyzer class to extend *deSeg* to the language of your choice. The disambiguator just expects the *get_possible_tokenizations()* method of the analyzer to return a list of triples for each input word, where each triple is an analysis, comprised of a potentially empty list of prefixal elements, the base string, and a potentially empty list of suffixal elements.
+
 
 ## Quick Start
 
-This is a short demo. For a full description of the various models you can train with the Greedy Tokenizer, see Disambiguation Models below.
+This is a short demo. For a full description of the various models you can train with *deSeg*, see Usage Options below.
 
 ### Prerequisites
 
 * [Python 3](https://www.python.org/downloads/)
-* [Scipy](https://www.scipy.org)
-* [CAMeL Tools](https://camel-tools.readthedocs.io/en/latest/)
+* [scipy](https://www.scipy.org)
+* [camel_tools](https://camel-tools.readthedocs.io/en/latest/)
 
 ### Demo
 
-Train (unsupervised) the tokenizer on punctuation-separated input text (*sample.in*)
+Train the segmenter on unannotated sample data using the built-in, free grammar for Modern Standard Arabic.
 
-```python greedy_disambiguator.py -m train -t sample.in -d built-in -f simple -i False -l 2```
+```python deSeg.py -m train -t sample.in -g grammar.db -a built-in```
 
-Run the cached trained tokenizer from above in interactive mode
+Run the trained segmenter in interactive mode.
 
-```python greedy_disambiguator.py -m interactive -c disambiguator_sample.in_built-in_simple_minBase2_classConditional.pkl```
+```python deSeg.py -m interactive -c  disambiguator.sample.in.grammar.db.minBase1.pkl```
 
-Apply the cached trained tokenizer to a test file (*sample.in*) and generate a tokenized output (*sample.out*)
+Apply the segmenter to the sample data.
 
-```python greedy_disambiguator.py -m apply -c disambiguator_sample.in_built-in_simple_classConditional.pkl -T sample.in -o sample.out```
-
-## Training Disambiguation Models
-
-The Greedy Tokenizer is run in train mode with the following option: ```-m train```. It can train any of 5 models as follows by manipulating the ```f```, clitic factorization, and ```i```, ignore classes options:
-
-1. **SU: Simple clitics, Unconditional** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. Likelihood is calculated as the frequency with which the token appeared in an analysis divided by the number of times the token appeared as an ngram (if there are re-write rules involved, we discount appearances based on edit distance between the input form and the re-written form). We consider each clitic to be a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f simple -i True```
-2. **SC: Simple clitics, Class conditional** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. We consider each clitic to be a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f simple -i False```
-3. **CU: Complex clitics, Unconditional** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. If there are multiple proclitics, we consider the combination to be a single token, and the same goes for enclitics. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f complex -i True```
-4. **CC: Complex clitics, Class conditional** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data conditioning on the token's class, i.e., clitic or base. If there are multiple proclitics, we consider the combination to be a single token, and the same goes for enclitics. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. ```... -f complex -i False```
-5. **J: Joint clitics** We calculate the likelihood for each token (clitic or base) over all occurences in all possible analyses in the training data without conditioning over the token's class, i.e., clitic or base. We consider the combination of all clitics (regardless of position before or after the base) to constitute a single token. The optimal tokenization for a given word is the possible analysis which maximizes the geometric mean of its component tokens. Mathematically, the unconditional and conditional variants are identical with joint clitics because there can only ever be a single clitic per analyses in the joint model, so it does not matter if classes are ignored or not. ```... -f joint -i True/False```
-
-## Applying Disambiguation Models
-
-To apply a trained disambiguator model, you need to specify apply mode with the option ```-m apply```. You will also need to specify the cached trained disambiguator model you wish to use. A trained disambiguator is always stored in the working directory as a pickle file at the conclusion of training and the location of the file is written to standard output. You can specify which cached disambiguation model to apply during testing with the cached model option: ```-c [your_disambiguator.pkl]```
+```python deSeg.py -m apply -c disambiguator.sample.in.grammar.db.minBase1.pkl -T sample.in -o sample.out```
 
 ## Usage Options
 
 In addition to specifying the relevant disambiguation models as discussed above, you can also specify the following options at the command line:
 
+* ```-m``` Mode. *deSeg* can be run in ```train```, ```interactive```, or ```apply``` mode.
 * ```-t``` Training file. This is raw data to be run through the analyzer to gather frequency statistics and train the disambiguator.
 * ```-T``` Test file. This is the data which the trained disambiguator will tokenize.
 * ```-o``` Output file. This is where the tokenized output will be written.
-* ```-d``` Database. This is the location of the database upon which the analyzer relies. This repository includes a built-in database which will be used by default.
-* ```-a``` Accomodation. This argument is used to trigger any ad hoc function you need to include in order to make your database behave in the manner that the analyzer expects. Included accomodations are ```DA``` which is designed to handle a delexicalized Dialectal Arabic database and ```built-in``` which will be triggered by default if you use the default, built-in Modern Standard Arabic database.
-* ```-l``` Minimum base length. The default is 1 character. If no analysis can be found with base of length >= the minimum base length, the word will be returned as the base token and it will be assumed that there are no clitics.
-* ```-b``` Baseline mode. There are four baseline options. ```most_tokens``` chooses the analysis that maximizes the number of tokens for each word form, using the trained model only to break ties. ```smallest_stem``` chooses the analysis that minimizes the stem length such that it remains >= the minimum length specified by option ```-l```, and, again, the trained model is only used to break ties. ```most_tokens_no_backoff``` and ```smallest_stem_no_backoff``` are the same as their counterparts except, for each type, ties are broken by random chance. Once a random choice of best tokenization is made for each word though, that tokenization is used consistently over every occurence of said word.
-* ```-c``` Cached disambiguator model. Once you train a tokenization model, you can cache it to be quickly loaded for future use. This option specifies the location where it will be cached or where a previously cached model will be looked for.
+* ```-g``` Grammar. This is the location of the grammar database describing the combinatorics of closed class forms.
+* ```-a``` Accomodated (sub)grammar(s). This option can be used to handle diglossia or other dialectal variation, and thus, it takes multiple arguments. We also use to it to handle the fact that the built-in grammar produces slightly differently formatted anaylises than the grammar this tool was originally developed with. Specify ```built-in``` to use the free grammar attached in this repository.
+* ```-c``` Cached disambiguator model. This option specifies the location to look for a previously cached disambiguator model.
+* ```-p``` Priority. This specifies the priority over factors affecting the disambiguator. ```f``` represents base fertility, ```b``` represents base length minimization, and ```c``` represents base count. The allowable options for priority are thus (1) ```fbc``` (1) ```fcb``` (1) ```bfc``` (1) ```bcf``` (1) ```cfb``` (1) ```cbf```. By defualt, ```fbc``` is used.
+* ```-P``` Print options. ```most_frequent_tokens``` will print the most frequent tokens for each class (prefixal, base, suffixal) to standard output. ```ranked_tokenizations_by_word``` will print the ranking over possible tokenizations for every single word in the test file. This can only be used in apply mode.
+* ```-d``` Debug. If True, this will print statistics for every token in every possible analyses when running in apply or interactive mode.
 * ```-s``` Separator. This is the charactor appended to the end of prefixal elements or beginning of suffixal elements to signal how they attach to the base. The separator is '+' by default.
-* ```-p``` Print options. ```most_frequent_tokens``` will print the most frequent tokens for each class to standard output. ```ranked_tokenizations_by_word``` will print the ranking over possible tokenizations for every single word in the test file.
-* ```-D``` Debug mode. If True, this will print statistics for every token in every possible analyses during test time (this works in interactive mode as well).
-* ```-m``` In addition to ```train``` and ```apply```, the greedy tokenizer can also be run in interactive mode by using the ```interactive``` option. This allows the user to query the trained tokenizer from the command line.
+* ```-l``` Minimum Length of candidate base forms. Analyses with base forms of length less than this argument will only be considered if said base is the entire word.
+* ```-M``` Multiple threads. This specifies how many threads to use in ```train``` mode. By defualt, *deSeg* will try to use 12 threads, each analyzing 1,000 word chunks of the vocabulary before consilidating the analyses to compute statistics for the disambiguator.
 
 ## Acknowledgments
 
-The Greedy Tokenizer was constructed at the New York University Abu Dhabi's [CAMeL Lab](https://nyuad.nyu.edu/en/research/centers-labs-and-projects/computational-approaches-to-modeling-language-lab.html) using the [Calima Star Analyzer](https://calimastar.abudhabi.nyu.edu/#/analyzer).
+*deSeg* was constructed at the New York University Abu Dhabi's [CAMeL Lab](https://nyuad.nyu.edu/en/research/centers-labs-and-projects/computational-approaches-to-modeling-language-lab.html) using the [Calima Star Analyzer](https://calimastar.abudhabi.nyu.edu/#/analyzer).
